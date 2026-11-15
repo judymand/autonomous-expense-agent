@@ -57,7 +57,10 @@ class Category(Base):
 
 
 class Transaction(Base):
-    """A single expense. Amounts are positive values in the stored currency."""
+    """A single expense. Amounts are positive values in the stored currency.
+
+    ``receipt_hash`` identifies the merchant, calendar date, amount, and currency.
+    """
 
     __tablename__ = "transactions"
 
@@ -68,6 +71,7 @@ class Transaction(Base):
     description: Mapped[str | None] = mapped_column(String(255))
     amount: Mapped[Decimal] = mapped_column(Numeric(12, 2))
     currency: Mapped[str] = mapped_column(String(3), default="ILS")
+    receipt_hash: Mapped[str | None] = mapped_column(String(64), index=True)
     transacted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
 

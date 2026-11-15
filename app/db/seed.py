@@ -18,6 +18,7 @@ from faker import Faker
 from sqlalchemy import delete, func, select
 
 from app.db.models import Category, Transaction, User
+from app.db.receipt_hash import compute_receipt_hash
 from app.db.session import get_session, init_db
 from app.db.settings import get_settings
 from app.db.vector_store import (
@@ -191,6 +192,7 @@ def _build_transactions(
                 description=description,
                 amount=amount,
                 currency="ILS",
+                receipt_hash=compute_receipt_hash(merchant, day, amount, "ILS"),
                 transacted_at=when,
             )
         )
