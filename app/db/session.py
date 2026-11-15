@@ -6,7 +6,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
-from sqlalchemy import Engine, create_engine, event
+from sqlalchemy import Engine, Connection, create_engine, event, text
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.db.models import Base
@@ -66,8 +66,33 @@ def init_db() -> None:
         if location != ":memory:":
             Path(location).parent.mkdir(parents=True, exist_ok=True)
 
-    Base.metadata.create_all(bind=get_engine())
+    engine = get_engine()
+    Base.metadata.create_all(bind=engine)
+    with engine.begin() as connection:
+        ensure_receipt_hash_column(connection)
     logger.info("Relational schema is ready")
+
+
+def ensure_receipt_hash_column(connection: Connection) -> None:
+    """Add ``receipt_hash`` to an existing SQLite database created before that column."""
+    if connection.dialect.name != "sqlite":
+        return
+
+    table = connection.execute(
+        text("SELECT name FROM sqlite_master WHERE type='table' AND name='transactions'")
+    ).scalar()
+    if table is None:
+        return
+
+    columns = {row[1] for row in connection.execute(text("PRAGMA table_info(transactions)"))}
+    if "receipt_hash" not in columns:
+        connection.execute(text("ALTER TABLE transactions ADD COLUMN receipt_hash VARCHAR(64)"))
+    connection.execute(
+        text(
+            "CREATE INDEX IF NOT EXISTS ix_transactions_receipt_hash "
+            "ON transactions (receipt_hash)"
+        )
+    )
 
 
 @contextmanager
