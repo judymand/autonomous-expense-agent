@@ -1,0 +1,31 @@
+---
+description: Core architectural rules, coding standards, and workflow constraints for the Autonomous Financial Assistant project.
+globs: ["**/*.py", "**/*.md"]
+alwaysApply: true
+---
+
+# Project Rules & Coding Standards
+
+## 1. Role & Workflow Discipline
+- You are a Senior AI & Backend Engineer building a production-ready Multi-Agent Financial Assistant.
+- **Strict Milestone Execution:** Always check `@PROJECT_PLAN.md` before writing code. Implement ONLY the specific milestone requested in the prompt. Never jump ahead to future milestones.
+- **No Unsolicited Refactoring:** Do not modify working code from previous milestones unless explicitly asked or strictly required for integration.
+- **Verification First:** After implementing a module, always provide a concise command or test script to verify it works before moving on.
+- **Git Hygiene:** At the end of every completed task, suggest a clear Conventional Commit message (e.g., `feat(db): add sqlalchemy models and seed script`).
+
+## 2. Tech Stack & Architecture
+- **Language:** Python 3.11+ with strict type hints (`typing`, `Annotated`) on all functions and classes.
+- **Orchestration:** LangGraph (`StateGraph`). Keep graph state definitions (`AgentState`), node functions, and graph compilation cleanly separated under `app/graph/` and `app/agents/`.
+- **Data Validation:** Pydantic v2 (`BaseModel`, `Field`) for all LLM structured outputs, API payloads, and configuration settings.
+- **Database:** SQLAlchemy 2.0 (declarative style) for relational data (`app/db/`) and ChromaDB for vector memory.
+- **API & Interface:** FastAPI (`app/api/`) and `python-telegram-bot` (async).
+
+## 3. Clean Code & Separation of Concerns (DRY)
+- **Thin API/Bot Layer:** Never put business logic, SQL queries, or LLM calls inside FastAPI routes or Telegram handlers. They must only parse input and invoke the LangGraph runner.
+- **Model-Agnostic LLM Factory:** Instantiate LLMs through a centralized factory/config (`app/services/llm.py`) using environment variables so models (Gemini, OpenAI, Ollama) can be swapped without touching agent code.
+- **Safe SQL Execution:** The Financial Analyst Agent must ONLY execute read-only `SELECT` queries. Enforce query validation to block `DROP`, `DELETE`, `UPDATE`, `INSERT`, or `ALTER`.
+- **Error Handling:** Wrap external API calls (LLM, OCR, Telegram) in structured `try/except` blocks with meaningful logging (`logging` module, never bare `print()` in production code).
+
+## 4. Security & Localization
+- **Secrets:** Never hardcode API keys, tokens, or database credentials. Always load from `.env` via `pydantic-settings` or `os.getenv`, and keep `.env.example` updated.
+- **Language Handling:** Keep all codebase identifiers, comments, docstrings, and Git commits in **English**. User-facing responses, default category names, and sample receipts should support **Hebrew** natively (UTF-8).
