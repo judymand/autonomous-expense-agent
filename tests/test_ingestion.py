@@ -104,22 +104,16 @@ def _extraction(**overrides: object) -> ReceiptExtraction:
 
 
 def test_google_factory_uses_gemini_flash() -> None:
-    model = get_chat_model(
-        _settings(
-            llm_provider="google",
-            llm_model="gemini-2.5-flash",
-            google_api_key="test-not-real",
-        )
-    )
+    model = get_chat_model(_settings(llm_provider="google", google_api_key="test-not-real"))
     assert type(model).__name__ == "ChatGoogleGenerativeAI"
-    assert model.model == "gemini-2.5-flash"
+    assert model.model == "gemini-3.8-flash"
 
 
 def test_ollama_factory_uses_local_model() -> None:
     model = get_chat_model(
         _settings(
             llm_provider="ollama",
-            llm_model="gemini-2.5-flash",
+            llm_model="gemini-3.8-flash",
             ollama_model="llava",
             ollama_base_url="http://127.0.0.1:11434",
         )
@@ -157,7 +151,7 @@ def test_preference_rule_overrides_category(tmp_path: Path) -> None:
     preferences = FakePreferences(
         {
             "metadatas": [[{"topic": "groceries", "merchant": "שופרסל", "telegram_id": 55}]],
-            "distances": [[0.9]],
+            "distances": [[0.2]],
         }
     )
     result = ingest_receipt(
@@ -205,7 +199,7 @@ def test_merchant_rule_wins_over_a_closer_semantic_match(tmp_path: Path) -> None
                 {"topic": "restaurants"},
                 {"topic": "groceries", "merchant": "שופרסל"},
             ]],
-            "distances": [[0.05, 0.9]],
+            "distances": [[0.2, 0.15]],
         }
     )
     result = ingest_receipt(
@@ -236,6 +230,48 @@ def test_existing_sqlite_file_gains_receipt_hash_column(tmp_path: Path) -> None:
         ensure_receipt_hash_column(connection)
         columns = {row[1] for row in connection.execute(text("PRAGMA table_info(transactions)"))}
     assert "receipt_hash" in columns
+
+
+def test_generic_merchant_does_not_match_preference_rules(tmp_path: Path) -> None:
+    session = _session()
+    user = _user(session)
+    preferences = FakePreferences(
+        {
+            "metadatas": [[{"topic": "groceries", "merchant": 'שם החברה בע"מ'}]],
+            "distances": [[0.05]],
+        }
+    )
+    result = ingest_receipt(
+        _png(tmp_path / "receipt.png"),
+        user_id=user.id,
+        session=session,
+        llm=FakeLLM(_extraction(merchant_name='שם החברה בע"מ')),
+        preferences=preferences,
+    )
+    assert result.preference_applied is False
+    assert result.extraction.suggested_category == "קניות"
+    assert result.extraction.confidence_score == 0.62
+    assert preferences.kwargs is None
+
+
+def test_weak_distance_does_not_override_even_with_the_same_merchant(tmp_path: Path) -> None:
+    session = _session()
+    user = _user(session)
+    preferences = FakePreferences(
+        {
+            "metadatas": [[{"topic": "groceries", "merchant": "שופרסל"}]],
+            "distances": [[0.41]],
+        }
+    )
+    result = ingest_receipt(
+        _png(tmp_path / "receipt.png"),
+        user_id=user.id,
+        session=session,
+        llm=FakeLLM(_extraction()),
+        preferences=preferences,
+    )
+    assert result.preference_applied is False
+    assert result.extraction.suggested_category == "קניות"
 
 
 def test_distant_preference_does_not_override(tmp_path: Path) -> None:

@@ -24,7 +24,9 @@ from app.services.llm import get_chat_model
 logger = logging.getLogger(__name__)
 
 MAX_PDF_PAGES = 4
-MAX_PREFERENCE_DISTANCE = 0.45
+# Cosine distance in Chroma (lower is closer). 0.40 keeps a real merchant near its
+# own rule and rejects weaker hits, including boilerplate names such as "שם החברה בע\"מ".
+MAX_PREFERENCE_DISTANCE = 0.40
 
 _IMAGE_MIME_TYPES = {
     ".png": "image/png",
@@ -45,6 +47,9 @@ _CURRENCY_ALIASES = {
     "ש״ח": "ILS",
     "שח": "ILS",
 }
+
+# Invoice templates often leave this placeholder instead of the real merchant.
+_GENERIC_MERCHANT_NAMES = frozenset({"שם החברה בעמ", "שם החברה", "שם העסק בעמ", "שם העסק"})
 
 
 class SupportsStructuredOutput(Protocol):
@@ -255,6 +260,10 @@ def _apply_preference(
     session: Session,
     preferences: PreferenceCollection | None,
 ) -> ReceiptExtraction | None:
+    if _is_generic_merchant(extraction.merchant_name):
+        logger.info("Skipping preference rules for generic merchant %s", extraction.merchant_name)
+        return None
+
     collection = preferences if preferences is not None else _open_preferences()
     if collection is None:
         return None
@@ -325,15 +334,14 @@ def _matching_category(
         if category is None:
             continue
         distance = _distance_at(distances, index)
+        if distance is None or distance > MAX_PREFERENCE_DISTANCE:
+            continue
         rule_merchant = metadata.get("merchant")
         merchant_rule = isinstance(rule_merchant, str) and bool(rule_merchant.strip())
-        if merchant_rule:
-            if " ".join(str(rule_merchant).casefold().split()) != " ".join(merchant.casefold().split()):
-                continue
-        elif distance is None or distance > MAX_PREFERENCE_DISTANCE:
+        if merchant_rule and _normalize_merchant(str(rule_merchant)) != _normalize_merchant(merchant):
             continue
         # A merchant-specific rule wins over a merely similar preference.
-        rank = (0 if merchant_rule else 1, distance if distance is not None else 1.0)
+        rank = (0 if merchant_rule else 1, distance)
         if best_rank is None or rank < best_rank:
             best_category = category
             best_rank = rank
@@ -357,6 +365,17 @@ def _first_list(value: object) -> list[object]:
     if isinstance(first, list):
         return list(first)
     return []
+
+
+def _normalize_merchant(value: str) -> str:
+    collapsed = " ".join(value.casefold().split())
+    for mark in ('"', "״", "“", "”", "'", "׳", "\\"):
+        collapsed = collapsed.replace(mark, "")
+    return " ".join(collapsed.split())
+
+
+def _is_generic_merchant(value: str) -> bool:
+    return _normalize_merchant(value) in _GENERIC_MERCHANT_NAMES
 
 
 def _distance_at(distances: list[object], index: int) -> float | None:
