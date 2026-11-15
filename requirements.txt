@@ -1,0 +1,13 @@
+# Direct dependencies for Python 3.11+.
+langgraph==1.2.22
+langchain-google-genai==4.5.0
+sqlalchemy==2.1.8
+chromadb==1.5.9
+pydantic==2.14.3
+pydantic-settings==2.16.3
+fastapi==0.163.1
+uvicorn==0.54.0
+python-telegram-bot==22.8
+faker==40.54.0
+pytest==9.2.0
+python-dotenv==1.2.4
