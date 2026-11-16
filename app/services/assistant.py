@@ -96,7 +96,7 @@ class AssistantRunner:
         user_id: int,
         thread_id: str,
         message: str,
-        receipt_path: Path | None = None,
+        receipt_path: str | Path | None = None,
     ) -> ChatTurnResponse:
         """Append a user message and return the reply or the paused receipt."""
         with self._lock:
@@ -194,7 +194,7 @@ def format_interrupt_message(payload: Mapping[str, Any]) -> str:
     return "\n".join(lines)
 
 
-def _graph_input(user_id: int, message: str, receipt_path: Path | None) -> dict[str, object]:
+def _graph_input(user_id: int, message: str, receipt_path: str | Path | None) -> dict[str, object]:
     kwargs: dict[str, str] = {}
     if receipt_path is not None:
         kwargs["receipt_path"] = str(receipt_path)

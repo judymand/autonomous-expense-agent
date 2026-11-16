@@ -94,6 +94,8 @@ def _google_model(cfg: LLMSettings, model_name: str) -> BaseChatModel:
         model=model_name,
         api_key=cfg.google_api_key.get_secret_value(),
         temperature=0,
+        max_retries=2,
+        timeout=30,
     )
 
 
