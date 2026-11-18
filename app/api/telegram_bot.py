@@ -107,7 +107,15 @@ def build_application(
     session_factory: SessionFactory | None = None,
 ) -> Application:
     """Register text, receipt, and approval-button handlers."""
-    application = Application.builder().token(token).build()
+    application = (
+        Application.builder()
+        .token(token)
+        .connect_timeout(20.0)
+        .read_timeout(20.0)
+        .write_timeout(20.0)
+        .get_updates_read_timeout(30.0)
+        .build()
+    )
     application.bot_data["runner"] = runner if runner is not None else AssistantRunner(build_workflow())
     application.bot_data["session_factory"] = session_factory if session_factory is not None else get_session
     application.add_handler(CommandHandler("start", on_start))
@@ -406,7 +414,7 @@ def main() -> None:
         logger.exception("Failed to start the Telegram bot")
         raise
     logger.info("Telegram bot polling")
-    application.run_polling()
+    application.run_polling(bootstrap_retries=3)
 
 
 if __name__ == "__main__":

@@ -7,9 +7,10 @@ API key come from the environment or ``.env``.
 
 import logging
 from functools import lru_cache
-from typing import Literal
+from typing import Any, Literal
 
 from langchain_core.language_models.chat_models import BaseChatModel
+from langchain_core.runnables import Runnable
 from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -19,7 +20,15 @@ logger = logging.getLogger(__name__)
 
 ProviderName = Literal["google", "ollama"]
 DEFAULT_GEMINI_MODEL = "gemini-3.8-flash"
+# Tried in order when the primary Gemini model times out or returns an error.
+GEMINI_FALLBACK_MODELS: tuple[str, ...] = (
+    "gemini-3.7-flash",
+    "gemini-3.5-flash-lite",
+)
+GEMINI_TIMEOUT_SECONDS = 60
+GEMINI_MAX_RETRIES = 1
 DEFAULT_OLLAMA_MODEL = "llava"
+ChatModel = BaseChatModel | Runnable[Any, Any]
 
 
 class LLMSettings(BaseSettings):
@@ -68,8 +77,12 @@ def get_llm_settings() -> LLMSettings:
     return LLMSettings()
 
 
-def get_chat_model(settings: LLMSettings | None = None) -> BaseChatModel:
-    """Build the configured chat model without calling it."""
+def get_chat_model(settings: LLMSettings | None = None) -> ChatModel:
+    """Build the configured chat model without calling it.
+
+    Gemini returns the ``LLM_MODEL`` client first, then ``gemini-3.7-flash`` and
+    ``gemini-3.5-flash-lite`` if that call fails.
+    """
     cfg = settings if settings is not None else get_llm_settings()
     model_name = cfg.resolved_model()
     try:
@@ -83,19 +96,31 @@ def get_chat_model(settings: LLMSettings | None = None) -> BaseChatModel:
     raise ValueError(f"Unsupported LLM provider: {cfg.llm_provider}")
 
 
-def _google_model(cfg: LLMSettings, model_name: str) -> BaseChatModel:
+def _google_model(cfg: LLMSettings, model_name: str) -> ChatModel:
+    if cfg.google_api_key is None:
+        raise RuntimeError("GOOGLE_API_KEY is required when LLM_PROVIDER=google")
+
+    primary = _gemini_chat(cfg, model_name)
+    fallback_names = [name for name in GEMINI_FALLBACK_MODELS if name != model_name]
+    fallbacks = [_gemini_chat(cfg, name) for name in fallback_names]
+    logger.info("Creating Google chat model %s with fallbacks %s", model_name, fallback_names)
+    if not fallbacks:
+        return primary
+    return primary.with_fallbacks(fallbacks)
+
+
+def _gemini_chat(cfg: LLMSettings, model_name: str) -> BaseChatModel:
     from langchain_google_genai import ChatGoogleGenerativeAI
 
     if cfg.google_api_key is None:
         raise RuntimeError("GOOGLE_API_KEY is required when LLM_PROVIDER=google")
 
-    logger.info("Creating Google chat model %s", model_name)
     return ChatGoogleGenerativeAI(
         model=model_name,
         api_key=cfg.google_api_key.get_secret_value(),
         temperature=0,
-        max_retries=2,
-        timeout=30,
+        max_retries=GEMINI_MAX_RETRIES,
+        timeout=GEMINI_TIMEOUT_SECONDS,
     )
 
 

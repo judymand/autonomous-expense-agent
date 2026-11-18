@@ -105,8 +105,14 @@ def _extraction(**overrides: object) -> ReceiptExtraction:
 
 def test_google_factory_uses_gemini_flash() -> None:
     model = get_chat_model(_settings(llm_provider="google", google_api_key="test-not-real"))
-    assert type(model).__name__ == "ChatGoogleGenerativeAI"
-    assert model.model == "gemini-3.8-flash"
+    assert type(model).__name__ == "RunnableWithFallbacks"
+    steps = list(model.runnables)
+    assert [step.model for step in steps] == [
+        "gemini-3.8-flash",
+        "gemini-3.7-flash",
+        "gemini-3.5-flash-lite",
+    ]
+    assert all(step.max_retries == 1 and step.timeout == 60 for step in steps)
 
 
 def test_ollama_factory_uses_local_model() -> None:
