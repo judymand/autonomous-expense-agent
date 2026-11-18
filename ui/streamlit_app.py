@@ -78,23 +78,23 @@ def _ensure_session() -> None:
     st.session_state.setdefault("last_trace", None)
     st.session_state.setdefault("last_extraction", None)
     st.session_state.setdefault("pending_interrupt", None)
-    st.session_state.setdefault("upload_key", "receipt-0")
+    st.session_state.setdefault("pending_turn", None)
 
 
 def _render_header() -> None:
-    action_col, title_col = st.columns([1, 5])
-    with title_col:
-        st.markdown(
+    """White navbar: Hebrew title on the right, new-chat action on the left."""
+    with st.container(key="page_header"):
+        title_col, action_col = st.columns([0.82, 0.18], vertical_alignment="center")
+        title_col.markdown(
             (
-                '<div class="hero">'
+                '<div class="page-header-copy">'
                 "<h1>עוזר ההוצאות</h1>"
                 '<span class="badge">מערכת סוכנים אוטונומית לניהול הוצאות</span>'
                 "</div>"
             ),
             unsafe_allow_html=True,
         )
-    with action_col:
-        if st.button("שיחה חדשה", width="stretch"):
+        if action_col.button("שיחה חדשה", key="new_chat", width="content"):
             _reset_thread()
             st.rerun()
     render_kpi_row()
@@ -106,7 +106,7 @@ def _reset_thread() -> None:
     st.session_state.last_trace = None
     st.session_state.last_extraction = None
     st.session_state.pending_interrupt = None
-    st.session_state.upload_key = f"receipt-{uuid.uuid4().hex[:8]}"
+    st.session_state.pending_turn = None
 
 
 def _safe_categories() -> list[str]:
@@ -118,31 +118,35 @@ def _safe_categories() -> list[str]:
 
 
 def _on_send(message: str, upload: tuple[str, bytes] | None) -> None:
+    """Finish a turn that the chat panel already showed as a user bubble.
+
+    ``send_turn`` writes any receipt to a temp file and calls ``run_chat``.
+    """
     text = message.strip()
     if not text and upload is None:
-        return
-    label = text or "קבלה מצורפת"
-    if upload is not None:
-        label = f"{label}\n📎 {upload[0]}"
+        st.session_state.pending_turn = None
+        st.rerun()
     try:
         turn = send_turn(thread_id=str(st.session_state.thread_id), message=text, upload=upload)
     except AssistantError as exc:
+        st.session_state.pending_turn = None
         st.session_state.form_error = exc.detail
         st.rerun()
     except ValueError as exc:
+        st.session_state.pending_turn = None
         st.session_state.form_error = str(exc)
         st.rerun()
     except Exception:
         logger.exception("UI chat turn failed")
+        st.session_state.pending_turn = None
         st.session_state.form_error = "לא הצלחתי להשלים את הפנייה."
         st.rerun()
 
     history = list(st.session_state.chat_history)
-    history.append({"role": "user", "content": label})
     history.append({"role": "assistant", "content": turn.message})
     st.session_state.chat_history = history
+    st.session_state.pending_turn = None
     _remember_turn(turn)
-    st.session_state.upload_key = f"receipt-{uuid.uuid4().hex[:8]}"
     st.rerun()
 
 

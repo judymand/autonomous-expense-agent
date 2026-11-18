@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from datetime import datetime, timezone
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -18,6 +19,7 @@ logger = logging.getLogger(__name__)
 
 DEMO_USER_ID = 1
 LOCAL_TZ = ZoneInfo("Asia/Jerusalem")
+_MONTH_KEY = re.compile(r"^\d{4}-(0[1-9]|1[0-2])$")
 
 
 def spending_kpis(user_id: int = DEMO_USER_ID) -> dict[str, Any]:
@@ -49,21 +51,43 @@ def spending_kpis(user_id: int = DEMO_USER_ID) -> dict[str, Any]:
     }
 
 
-def spend_by_category(user_id: int = DEMO_USER_ID) -> pd.DataFrame:
-    """Category totals ordered from largest to smallest."""
+def transaction_months(user_id: int = DEMO_USER_ID) -> list[str]:
+    """Distinct local ``YYYY-MM`` months that have expenses, newest first."""
+    with get_session() as session:
+        stamps = session.scalars(
+            select(Transaction.transacted_at).where(Transaction.user_id == user_id)
+        ).all()
+    months = {_month_key(stamp) for stamp in stamps if isinstance(stamp, datetime)}
+    return sorted(months, reverse=True)
+
+
+def spend_by_category(user_id: int = DEMO_USER_ID, period: str | None = None) -> pd.DataFrame:
+    """Category totals ordered from largest to smallest.
+
+    ``period`` is a ``YYYY-MM`` month in Asia/Jerusalem. ``None`` includes every expense.
+    """
+    selected = period if period is not None and _MONTH_KEY.fullmatch(period) else None
     with get_session() as session:
         rows = session.execute(
-            select(Category.name, func.sum(Transaction.amount))
+            select(Category.name, Transaction.amount, Transaction.transacted_at)
             .join(Transaction, Transaction.category_id == Category.id)
             .where(Transaction.user_id == user_id)
-            .group_by(Category.name)
-            .order_by(func.sum(Transaction.amount).desc())
         ).all()
-    frame = pd.DataFrame(
-        [{"category": str(name), "total": float(amount or 0)} for name, amount in rows],
+
+    totals: dict[str, float] = {}
+    for name, amount, when in rows:
+        if not isinstance(when, datetime):
+            continue
+        if selected is not None and _month_key(when) != selected:
+            continue
+        key = str(name)
+        totals[key] = totals.get(key, 0.0) + float(amount or 0)
+
+    ordered = sorted(totals.items(), key=lambda item: item[1], reverse=True)
+    return pd.DataFrame(
+        [{"category": name, "total": total} for name, total in ordered],
         columns=["category", "total"],
     )
-    return frame
 
 
 def latest_transactions(user_id: int = DEMO_USER_ID, limit: int = 8) -> pd.DataFrame:
@@ -95,6 +119,19 @@ def latest_transactions(user_id: int = DEMO_USER_ID, limit: int = 8) -> pd.DataF
     return pd.DataFrame(records, columns=["תאריך", "בית עסק", "קטגוריה", "סכום"])
 
 
+def category_names_by_slug(user_id: int = DEMO_USER_ID) -> dict[str, str]:
+    """Hebrew category names keyed by the slug stored on preference rules."""
+    try:
+        with get_session() as session:
+            rows = session.execute(
+                select(Category.slug, Category.name).where(Category.user_id == user_id)
+            ).all()
+    except Exception:
+        logger.exception("Could not read category names")
+        return {}
+    return {str(slug): str(name) for slug, name in rows}
+
+
 def active_preference_rules() -> pd.DataFrame:
     """Documents currently stored in the Chroma user_preferences collection."""
     columns = ["בית עסק", "קטגוריה", "כלל"]
@@ -124,6 +161,10 @@ def active_preference_rules() -> pd.DataFrame:
             }
         )
     return pd.DataFrame(records, columns=columns)
+
+
+def _month_key(value: datetime) -> str:
+    return _local_date(value)[:7]
 
 
 def _local_date(value: datetime) -> str:

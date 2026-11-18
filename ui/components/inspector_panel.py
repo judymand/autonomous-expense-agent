@@ -8,7 +8,7 @@ from typing import Any
 import streamlit as st
 
 from ui.components.dashboard_panel import render_spend_panel
-from ui.services.analytics_queries import active_preference_rules
+from ui.services.analytics_queries import active_preference_rules, category_names_by_slug
 
 _EXPENSE_ROUTE: tuple[tuple[str, str], ...] = (
     ("supervisor", "Supervisor"),
@@ -36,15 +36,15 @@ def render_inspector_panel(
     st.markdown('<div class="panel-title">מאחורי הקלעים</div>', unsafe_allow_html=True)
     visited = _visited(trace)
     visible = _extraction_view(extraction)
-    route_tab, sql_tab, chart_tab = st.tabs(["ניתוב ונתוני קבלה", "שאילתת SQL חוקים", "גרף הוצאות"])
+    _render_pipeline(visited)
+    route_tab, sql_tab, chart_tab = st.tabs(["ניתוב ונתוני קבלה", "שאילתת SQL וחוקים", "גרף הוצאות"])
 
     with route_tab:
-        _render_pipeline(visited)
         st.markdown('<div class="section-label">נתוני קבלה</div>', unsafe_allow_html=True)
         if visible:
             st.json(visible, expanded=True)
         else:
-            st.caption(".אין חילוץ בפנייה הזו")
+            _empty_state("אין חילוץ בפנייה הזו")
         st.markdown('<div class="section-label">ביטחון</div>', unsafe_allow_html=True)
         _render_gauge(visible.get("confidence_score") if visible else None)
 
@@ -54,22 +54,48 @@ def render_inspector_panel(
         if isinstance(statement, str) and statement.strip():
             st.code(statement.strip(), language="sql")
         else:
-            st.caption(".לא הורצה שאילתה בפנייה הזו")
+            _empty_state("לא הורצה שאילתה בפנייה הזו")
         st.markdown('<div class="section-label">כלל שהוחל</div>', unsafe_allow_html=True)
         rule = None if trace is None else trace.get("matched_rule")
         if isinstance(rule, dict) and rule:
             st.json(rule, expanded=False)
         else:
-            st.caption(".לא הוחל כלל סיווג בפנייה הזו")
+            _empty_state("לא הוחל כלל סיווג בפנייה הזו")
         st.markdown('<div class="section-label">כללי ChromaDB</div>', unsafe_allow_html=True)
-        rules = active_preference_rules()
-        if rules.empty:
-            st.caption(".אין כללים שמורים")
-        else:
-            st.dataframe(rules, hide_index=True, width="stretch")
+        _render_preference_rules()
 
     with chart_tab:
         render_spend_panel()
+
+
+def _render_preference_rules() -> None:
+    """Full-width Hebrew cards for each stored preference rule."""
+    rules = active_preference_rules()
+    if rules.empty:
+        _empty_state("אין כללים שמורים")
+        return
+    labels = category_names_by_slug()
+    cards: list[str] = []
+    for record in rules.to_dict(orient="records"):
+        raw_category = str(record.get("קטגוריה") or "—")
+        category = html.escape(labels.get(raw_category, raw_category))
+        merchant = html.escape(str(record.get("בית עסק") or "—"))
+        body = html.escape(str(record.get("כלל") or "")).replace("\n", "<br>")
+        cards.append(
+            '<article class="rule-card" dir="rtl">'
+            '<div class="rule-top">'
+            f'<span class="rule-badge">{category}</span>'
+            f'<span class="rule-merchant">{merchant}</span>'
+            "</div>"
+            f'<p class="rule-text">{body}</p>'
+            "</article>"
+        )
+    st.markdown(f'<div class="rule-list">{"".join(cards)}</div>', unsafe_allow_html=True)
+
+
+def _empty_state(message: str) -> None:
+    """Centered dashed card for a section that has nothing to show."""
+    st.markdown(f'<div class="empty-state">{html.escape(message)}</div>', unsafe_allow_html=True)
 
 
 def _visited(trace: dict[str, Any] | None) -> list[str]:

@@ -8,7 +8,13 @@ APP_CSS = """
     font-family: "Heebo", "Arial Hebrew", "Noto Sans Hebrew", sans-serif;
   }
   .stApp { background: #F8FAFC; color: #0F172A; }
-  .block-container { padding-top: 1.1rem; max-width: 1240px; }
+  .block-container,
+  [data-testid="stMainBlockContainer"] {
+    padding-top: 1.1rem;
+    padding-left: 24px;
+    padding-right: 24px;
+    max-width: none;
+  }
 
   #MainMenu { visibility: hidden; }
   footer { visibility: hidden; }
@@ -17,17 +23,44 @@ APP_CSS = """
   [data-testid="stDecoration"],
   .stAppDeployButton { display: none; }
 
-  .hero { direction: rtl; text-align: right; margin-bottom: 0.35rem; }
-  .hero h1 {
+  .st-key-page_header {
+    direction: rtl;
+    width: 100%;
+    box-sizing: border-box;
+    background: #FFFFFF;
+    border: 1px solid #E2E8F0;
+    border-radius: 14px;
+    padding: 0.45rem 1.1rem;
+    margin-bottom: 0.9rem;
+    box-shadow: 0 8px 22px rgba(15, 23, 42, 0.05);
+  }
+  .page-header-copy {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 12px;
+    direction: rtl;
+    width: 100%;
+  }
+  .st-key-page_header .stMarkdown,
+  .st-key-page_header .stMarkdown div {
+    margin-top: 0 !important;
+    margin-bottom: 0 !important;
+  }
+  .st-key-page_header h1 {
     margin: 0;
+    padding: 0;
     font-size: 1.65rem;
+    line-height: 1.2;
     font-weight: 700;
     letter-spacing: -0.03em;
     color: #0F172A;
+    white-space: nowrap;
   }
+  .st-key-page_header [data-testid="stHeaderActionElements"] { display: none; }
   .badge {
     display: inline-block;
-    margin-top: 0.45rem;
+    margin: 0;
     padding: 0.28rem 0.7rem;
     border-radius: 999px;
     background: #EFF6FF;
@@ -35,6 +68,22 @@ APP_CSS = """
     border: 1px solid #DBEAFE;
     font-size: 0.82rem;
     font-weight: 600;
+  }
+  .st-key-new_chat {
+    width: 100%;
+    display: flex;
+    direction: ltr;
+    justify-content: flex-start;
+  }
+  .st-key-new_chat button {
+    background: #FFFFFF !important;
+    color: #334155 !important;
+    border: 1px solid #CBD5E1 !important;
+    border-radius: 10px;
+    font-size: 0.82rem;
+    font-weight: 600;
+    padding: 0.28rem 0.75rem;
+    min-height: 2rem;
   }
   .panel-title, .section-label {
     direction: rtl;
@@ -58,6 +107,10 @@ APP_CSS = """
     border-radius: 14px;
     padding: 0.85rem 1rem 0.7rem;
     box-shadow: 0 8px 22px rgba(15, 23, 42, 0.05);
+    min-height: 136px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
   }
   div[data-testid="stMetric"] label {
     color: #64748B;
@@ -68,7 +121,17 @@ APP_CSS = """
     font-weight: 700;
   }
 
-  .chat-log { direction: rtl; text-align: right; }
+  .st-key-chat_transcript {
+    padding: 16px 20px;
+    box-sizing: border-box;
+  }
+
+  .chat-log {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    direction: ltr;
+  }
   .bubble {
     direction: rtl;
     text-align: right;
@@ -80,18 +143,32 @@ APP_CSS = """
     line-height: 1.5;
   }
   .bubble.user {
+    align-self: flex-end;
     background: #2563EB;
     color: #FFFFFF;
-    margin-inline-end: 0;
-    margin-inline-start: 12%;
   }
   .bubble.assistant {
-    background: #FFFFFF;
+    align-self: flex-start;
+    background: #F1F5F9;
     color: #0F172A;
-    border: 1px solid #E2E8F0;
-    box-shadow: 0 4px 14px rgba(15, 23, 42, 0.04);
-    margin-inline-start: 0;
-    margin-inline-end: 12%;
+  }
+  .bubble-label {
+    direction: ltr;
+    text-align: left;
+    font-size: 0.68rem;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    color: #64748B;
+    margin-bottom: 0.22rem;
+  }
+  [data-testid="stChatInputTextArea"] {
+    direction: rtl;
+    text-align: right;
+  }
+  [data-testid="stChatInputTextArea"]::placeholder {
+    direction: rtl;
+    text-align: right;
+    unicode-bidi: isolate;
   }
 
   .stButton > button {
@@ -113,22 +190,8 @@ APP_CSS = """
     border: 1px solid #FECACA !important;
     color: #B91C1C !important;
   }
-  [data-testid="stFileUploader"] {
-    background: #EFF6FF;
-    border: 1px dashed #BFDBFE;
-    border-radius: 10px;
-    padding: 0.35rem 0.5rem 0.6rem;
-  }
-  [data-testid="stFileUploader"] section {
-    border: none;
-    background: transparent;
-  }
-  [data-testid="stFileUploader"] button {
-    border-radius: 10px;
-    background: #2563EB;
-    color: #FFFFFF;
-    border: none;
-  }
+  .st-key-spend_heading { direction: rtl; }
+  .st-key-spend_heading .section-label { margin: 0 0 0.35rem; }
 
   .approval-card {
     direction: rtl;
@@ -144,6 +207,27 @@ APP_CSS = """
   .approval-merchant { font-size: 1.12rem; font-weight: 700; color: #0F172A; }
   .approval-amount { font-size: 1.45rem; font-weight: 700; color: #1D4ED8; }
   .approval-meta { color: #475569; }
+
+  [data-baseweb="tab-list"],
+  [data-testid="stTabs"] [role="tablist"] {
+    direction: rtl !important;
+  }
+  [data-baseweb="tab"] p,
+  [data-testid="stTab"] p {
+    direction: rtl;
+    unicode-bidi: isolate;
+  }
+
+  .empty-state {
+    background: #F8FAFC;
+    border: 1px dashed #CBD5E1;
+    border-radius: 12px;
+    padding: 20px;
+    text-align: center;
+    color: #64748B;
+    direction: rtl;
+    margin: 0.2rem 0 0.7rem;
+  }
 
   .pipeline {
     direction: ltr;
@@ -172,6 +256,55 @@ APP_CSS = """
   .gauge-fill.high { background: #2563EB; }
   .gauge-fill.low { background: #D97706; }
   .gauge-label { direction: rtl; text-align: right; margin-top: 0.35rem; font-weight: 700; color: #0F172A; }
+
+  .rule-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.55rem;
+    width: 100%;
+  }
+  .rule-card {
+    direction: rtl;
+    text-align: right;
+    width: 100%;
+    box-sizing: border-box;
+    background: #FFFFFF;
+    border: 1px solid #E2E8F0;
+    border-radius: 12px;
+    padding: 0.75rem 0.9rem;
+    white-space: normal;
+    overflow: visible;
+  }
+  .rule-top {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.6rem;
+  }
+  .rule-badge {
+    display: inline-block;
+    background: #EFF6FF;
+    color: #1D4ED8;
+    border: 1px solid #DBEAFE;
+    border-radius: 999px;
+    padding: 0.12rem 0.6rem;
+    font-size: 0.75rem;
+    font-weight: 700;
+    white-space: nowrap;
+  }
+  .rule-merchant {
+    font-weight: 700;
+    color: #0F172A;
+  }
+  .rule-text {
+    margin: 0.45rem 0 0;
+    color: #0F172A;
+    line-height: 1.55;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
 
   div[data-testid="stJson"],
   div[data-testid="stCode"],
