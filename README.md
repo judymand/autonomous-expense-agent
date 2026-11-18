@@ -42,8 +42,8 @@ Telegram maps each `chat_id` to a `user_id` and a durable `thread_id` in the `co
 | Language | Python 3.11+ |
 | Orchestration | LangGraph with a SQLite checkpointer |
 | API | FastAPI |
-| Bot | python-telegram-bot (async, long polling) |
-| Models | Gemini or a local Ollama model, selected with `LLM_PROVIDER` |
+| Bot | python-telegram-bot (async, long polling) |ד
+| Models | Gemini (with automatic multi-model cloud fallback) or local Ollama via `LLM_PROVIDER` |
 | Relational store | SQLite through SQLAlchemy 2.0 |
 | Preference memory | ChromaDB |
 | Validation | Pydantic v2 |
@@ -106,12 +106,12 @@ The process loads `.env` when the API or the bot starts, so the `LANGCHAIN_*` na
 
 ## Run with Gemini
 
-Receipt photos and PDFs need a Gemini model that accepts images. The default is `gemini-3.8-flash`.
+Receipt photos, PDFs, and text turns use Google Gemini via `langchain-google-genai`. To protect against transient cloud latency or `503`/`504` spikes, `app/services/llm.py` configures an automatic fallback chain across active Gemini Flash models (`gemini-3.5-flash-lite` -> `gemini-3.7-flash` -> `gemini-3.8-flash`).
 
 ```bash
 # .env
 LLM_PROVIDER=google
-LLM_MODEL=gemini-3.8-flash
+LLM_MODEL=gemini-3.5-flash-lite
 GOOGLE_API_KEY=your-key
 ```
 
