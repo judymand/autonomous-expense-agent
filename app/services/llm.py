@@ -6,7 +6,10 @@ API key come from the environment or ``.env``.
 """
 
 import logging
+import os
+import sys
 from functools import lru_cache
+from pathlib import Path
 from typing import Any, Literal
 
 from langchain_core.language_models.chat_models import BaseChatModel
@@ -19,6 +22,15 @@ from app.db.settings import PROJECT_ROOT
 logger = logging.getLogger(__name__)
 
 ProviderName = Literal["google", "ollama"]
+_SECRET_KEYS = (
+    "GOOGLE_API_KEY",
+    "LLM_PROVIDER",
+    "LLM_MODEL",
+    "OLLAMA_BASE_URL",
+    "OLLAMA_MODEL",
+    "DATABASE_URL",
+    "CHROMA_PERSIST_DIR",
+)
 DEFAULT_GEMINI_MODEL = "gemini-3.8-flash"
 # Tried in order when the primary Gemini model times out or returns an error.
 GEMINI_FALLBACK_MODELS: tuple[str, ...] = (
@@ -69,6 +81,68 @@ class LLMSettings(BaseSettings):
         if self.llm_provider == "ollama":
             return self.ollama_model
         return self.llm_model
+
+
+def prime_llm_environment() -> None:
+    """Load ``.env`` and Streamlit secrets into the process environment.
+
+    Local ``.env`` values win. Streamlit Community Cloud secrets fill anything
+    still missing, either from ``.streamlit/secrets.toml`` or from ``st.secrets``
+    when the Streamlit runtime is already imported. Cached settings are dropped
+    so the next model build sees the merged values.
+    """
+    from dotenv import load_dotenv
+
+    from app.db.settings import get_settings
+
+    load_dotenv(PROJECT_ROOT / ".env", override=False)
+    _load_toml_secrets(PROJECT_ROOT / ".streamlit" / "secrets.toml")
+    _load_streamlit_runtime_secrets()
+    get_llm_settings.cache_clear()
+    get_settings.cache_clear()
+
+
+def _load_toml_secrets(path: Path) -> None:
+    if not path.is_file():
+        return
+    try:
+        import tomllib
+
+        payload = tomllib.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        logger.exception("Could not read Streamlit secrets at %s", path)
+        return
+    if isinstance(payload, dict):
+        _export_mapping(payload)
+
+
+def _load_streamlit_runtime_secrets() -> None:
+    streamlit = sys.modules.get("streamlit")
+    if streamlit is None:
+        return
+    try:
+        secrets = getattr(streamlit, "secrets")
+    except Exception:
+        logger.info("Streamlit secrets are unavailable")
+        return
+    try:
+        mapping = dict(secrets)
+    except Exception:
+        logger.debug("Streamlit secrets are not configured")
+        return
+    _export_mapping(mapping)
+
+
+def _export_mapping(mapping: dict[object, object]) -> None:
+    for key in _SECRET_KEYS:
+        if os.getenv(key):
+            continue
+        value = mapping.get(key)
+        if value is None:
+            continue
+        text = str(value).strip()
+        if text:
+            os.environ[key] = text
 
 
 @lru_cache(maxsize=1)

@@ -30,12 +30,16 @@ _RECEIPT_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".pdf"}
 
 
 def load_runtime_env() -> None:
-    """Export `.env` into the process so LangSmith and the bot token are visible.
+    """Export `.env` and Streamlit secrets so LangChain and the model factory can see them.
 
     Pydantic settings read the file for their own fields only. LangChain looks
     up ``LANGCHAIN_TRACING_V2``, ``LANGCHAIN_API_KEY``, and ``LANGCHAIN_PROJECT``
-    on the process environment.
+    on the process environment. ``GOOGLE_API_KEY`` is also copied from
+    ``st.secrets`` when the Streamlit runtime is already loaded.
     """
+    from app.services.llm import prime_llm_environment
+
+    prime_llm_environment()
     load_dotenv(PROJECT_ROOT / ".env", override=False)
 
 

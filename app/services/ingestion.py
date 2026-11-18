@@ -89,9 +89,10 @@ def ingest_receipt(
     extraction = extraction.model_copy(update={"currency": normalize_currency(extraction.currency)})
 
     preference_applied = False
-    overridden = _apply_preference(extraction, user, session, preferences)
-    if overridden is not None:
-        extraction = overridden
+    matched_rule: dict[str, object] | None = None
+    applied = _apply_preference(extraction, user, session, preferences)
+    if applied is not None:
+        extraction, matched_rule = applied
         preference_applied = True
 
     digest = compute_receipt_hash(
@@ -110,6 +111,7 @@ def ingest_receipt(
         is_duplicate=matched is not None,
         matched_transaction_id=None if matched is None else matched.id,
         preference_applied=preference_applied,
+        matched_rule=matched_rule,
     )
 
 
@@ -259,7 +261,7 @@ def _apply_preference(
     user: User,
     session: Session,
     preferences: PreferenceCollection | None,
-) -> ReceiptExtraction | None:
+) -> tuple[ReceiptExtraction, dict[str, object]] | None:
     if _is_generic_merchant(extraction.merchant_name):
         logger.info("Skipping preference rules for generic merchant %s", extraction.merchant_name)
         return None
@@ -289,7 +291,7 @@ def _apply_preference(
             query_texts=[query],
             n_results=min(4, result_count),
             where=where,
-            include=["metadatas", "distances"],
+            include=["metadatas", "documents", "distances"],
         )
     except Exception:
         logger.exception("Preference lookup failed for merchant %s", extraction.merchant_name)
@@ -299,14 +301,16 @@ def _apply_preference(
         category.slug: category.name
         for category in session.scalars(select(Category).where(Category.user_id == user.id)).all()
     }
-    category = _matching_category(extraction.merchant_name, found, categories_by_slug)
-    if category is None or category == extraction.suggested_category:
-        if category == extraction.suggested_category:
-            return extraction.model_copy(update={"confidence_score": 1.0})
+    category, index = _matching_preference(extraction.merchant_name, found, categories_by_slug)
+    if category is None or index is None:
         return None
 
+    rule = _rule_payload(found, index, category)
+    if category == extraction.suggested_category:
+        return extraction.model_copy(update={"confidence_score": 1.0}), rule
+
     logger.info("Preference rule set category %s for %s", category, extraction.merchant_name)
-    return extraction.model_copy(update={"suggested_category": category, "confidence_score": 1.0})
+    return extraction.model_copy(update={"suggested_category": category, "confidence_score": 1.0}), rule
 
 
 def _open_preferences() -> PreferenceCollection | None:
@@ -317,14 +321,16 @@ def _open_preferences() -> PreferenceCollection | None:
         return None
 
 
-def _matching_category(
+def _matching_preference(
     merchant: str,
     result: dict[str, object],
     categories_by_slug: dict[str, str],
-) -> str | None:
+) -> tuple[str | None, int | None]:
+    """Return the winning category and its row index, using the same ranking as before."""
     metadatas = _first_list(result.get("metadatas"))
     distances = _first_list(result.get("distances"))
     best_category: str | None = None
+    best_index: int | None = None
     best_rank: tuple[int, float] | None = None
 
     for index, metadata in enumerate(metadatas):
@@ -344,8 +350,34 @@ def _matching_category(
         rank = (0 if merchant_rule else 1, distance)
         if best_rank is None or rank < best_rank:
             best_category = category
+            best_index = index
             best_rank = rank
-    return best_category
+    return best_category, best_index
+
+
+def _rule_payload(result: dict[str, object], index: int, category: str) -> dict[str, object]:
+    """JSON-safe description of the Chroma preference row that was applied."""
+    metadatas = _first_list(result.get("metadatas"))
+    documents = _first_list(result.get("documents"))
+    identifiers = _first_list(result.get("ids"))
+    distances = _first_list(result.get("distances"))
+    metadata = metadatas[index] if index < len(metadatas) and isinstance(metadatas[index], dict) else {}
+    document = documents[index] if index < len(documents) and isinstance(documents[index], str) else None
+    rule_id = identifiers[index] if index < len(identifiers) and isinstance(identifiers[index], str) else None
+    clean_meta = {
+        str(key): value
+        for key, value in metadata.items()
+        if isinstance(value, str | int | float | bool) or value is None
+    }
+    merchant = clean_meta.get("merchant")
+    return {
+        "id": rule_id,
+        "document": document,
+        "category": category,
+        "merchant": merchant if isinstance(merchant, str) else None,
+        "distance": _distance_at(distances, index),
+        "metadata": clean_meta,
+    }
 
 
 def _category_from_metadata(metadata: dict[object, object], categories_by_slug: dict[str, str]) -> str | None:

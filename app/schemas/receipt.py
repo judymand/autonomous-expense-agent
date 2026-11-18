@@ -2,7 +2,7 @@
 
 from datetime import date
 from decimal import Decimal
-from typing import Annotated
+from typing import Annotated, Any
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -55,3 +55,4 @@ class IngestionResult(BaseModel):
     is_duplicate: bool
     matched_transaction_id: int | None = None
     preference_applied: bool = False
+    matched_rule: dict[str, Any] | None = None

@@ -50,6 +50,17 @@ class ResumeRequest(BaseModel):
         return cleaned or None
 
 
+class TurnTrace(BaseModel):
+    """Optional debug view of the nodes and tools used in one turn.
+
+    Every field is optional so callers that ignore tracing stay compatible.
+    """
+
+    visited_nodes: list[str] = Field(default_factory=list)
+    generated_sql: str | None = None
+    matched_rule: dict[str, Any] | None = None
+
+
 class ChatTurnResponse(BaseModel):
     """Either a finished Hebrew reply or a paused expense waiting for a person."""
 
@@ -59,6 +70,7 @@ class ChatTurnResponse(BaseModel):
     message: str
     pending_receipt: dict[str, Any] | None = None
     interrupt: dict[str, Any] | None = None
+    trace: TurnTrace | None = None
 
 
 class HealthStatus(BaseModel):

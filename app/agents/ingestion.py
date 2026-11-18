@@ -211,7 +211,7 @@ def pending_receipt(result: IngestionResult) -> dict[str, object]:
     """JSON-safe receipt held in graph state until commit."""
     extraction = result.extraction
     amount = Decimal(extraction.total_amount).quantize(Decimal("0.01"))
-    return {
+    payload: dict[str, object] = {
         "merchant_name": extraction.merchant_name,
         "transaction_date": extraction.transaction_date.isoformat(),
         "total_amount": f"{amount:.2f}",
@@ -224,6 +224,9 @@ def pending_receipt(result: IngestionResult) -> dict[str, object]:
         "matched_transaction_id": result.matched_transaction_id,
         "items": [item.name for item in extraction.items],
     }
+    if result.matched_rule:
+        payload["matched_rule"] = result.matched_rule
+    return payload
 
 
 def approval_reasons(pending: dict[str, object]) -> list[str]:

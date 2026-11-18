@@ -16,7 +16,8 @@ from sqlalchemy.orm import Session
 
 from app.db.models import User
 from app.db.session import get_session
-from app.schemas.chat import ChatTurnResponse
+from app.schemas.chat import ChatTurnResponse, TurnTrace
+from app.services.turn_trace import build_turn_trace, checkpoint_id
 
 logger = logging.getLogger(__name__)
 
@@ -109,15 +110,18 @@ class AssistantRunner:
                     found = False
                 else:
                     found = True
+                    before = checkpoint_id(self._snapshot(thread_id))
                     result = self.graph.invoke(
                         _graph_input(user_id, message, receipt_path),
                         self._config(thread_id, session),
                     )
+                    snapshot = self._snapshot(thread_id)
                     turn = _turn_from_snapshot(
                         user_id,
                         thread_id,
-                        self._snapshot(thread_id),
+                        snapshot,
                         result,
+                        trace=build_turn_trace(self.graph, thread_id, before, _values(snapshot)),
                     )
             if not found or turn is None:
                 raise UnknownUser(user_id)
@@ -145,16 +149,19 @@ class AssistantRunner:
             if category:
                 decision["category"] = category
 
+            before = checkpoint_id(snapshot)
             with self.session_factory() as session:
                 result = self.graph.invoke(
                     Command(resume=decision),
                     self._config(thread_id, session),
                 )
+                resumed = self._snapshot(thread_id)
                 turn = _turn_from_snapshot(
                     user_id,
                     thread_id,
-                    self._snapshot(thread_id),
+                    resumed,
                     result,
+                    trace=build_turn_trace(self.graph, thread_id, before, _values(resumed)),
                 )
             logger.info("Thread %s resumed with status %s", thread_id, turn.status)
             return turn
@@ -209,6 +216,7 @@ def _turn_from_snapshot(
     thread_id: str,
     snapshot: object,
     result: object,
+    trace: TurnTrace | None = None,
 ) -> ChatTurnResponse:
     payload = _interrupt_payload(snapshot)
     values = _values(snapshot)
@@ -223,6 +231,7 @@ def _turn_from_snapshot(
             message=format_interrupt_message(payload),
             pending_receipt=pending if isinstance(pending, dict) else None,
             interrupt=dict(payload),
+            trace=trace,
         )
     return ChatTurnResponse(
         status="completed",
@@ -231,6 +240,7 @@ def _turn_from_snapshot(
         message=_final_message(values),
         pending_receipt=None,
         interrupt=None,
+        trace=trace,
     )
 
 
