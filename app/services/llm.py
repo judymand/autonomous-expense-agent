@@ -14,6 +14,7 @@ from typing import Any, Literal
 
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.runnables import Runnable
+from langchain_core.runnables.fallbacks import RunnableWithFallbacks
 from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -31,16 +32,40 @@ _SECRET_KEYS = (
     "DATABASE_URL",
     "CHROMA_PERSIST_DIR",
 )
-DEFAULT_GEMINI_MODEL = "gemini-3.8-flash"
+DEFAULT_GEMINI_MODEL = "gemini-3.5-flash-lite"
 # Tried in order when the primary Gemini model times out or returns an error.
+# Names that match ``LLM_MODEL`` are skipped so the chain never repeats a model.
 GEMINI_FALLBACK_MODELS: tuple[str, ...] = (
-    "gemini-3.7-flash",
-    "gemini-3.5-flash-lite",
+    "gemini-3.1-flash-lite",
+    "gemini-3.5-flash",
+    "gemini-3.6-flash",
 )
+# Catch provider outages such as ``503 UNAVAILABLE`` and ``GoogleAPIError``.
+_FALLBACK_EXCEPTIONS: tuple[type[BaseException], ...] = (Exception,)
 GEMINI_TIMEOUT_SECONDS = 60
 GEMINI_MAX_RETRIES = 1
 DEFAULT_OLLAMA_MODEL = "llava"
 ChatModel = BaseChatModel | Runnable[Any, Any]
+
+
+class _GeminiWithFallbacks(RunnableWithFallbacks[Any, Any]):
+    """Gemini chain that reapplies structured output to every fallback model.
+
+    ``RunnableWithFallbacks`` only keeps the fallback list for methods it can
+    prove return a ``Runnable``. Nodes such as the advisor call
+    ``with_structured_output`` and must still try the next model when Gemini
+    raises ``503 UNAVAILABLE`` or ``GoogleAPIError``.
+    """
+
+    def with_structured_output(self, schema: Any, **kwargs: Any) -> Runnable[Any, Any]:
+        """Bind ``schema`` on the primary model and on each fallback."""
+        primary = self.runnable.with_structured_output(schema, **kwargs)
+        fallbacks = [
+            fallback.with_structured_output(schema, **kwargs) for fallback in self.fallbacks
+        ]
+        if not fallbacks:
+            return primary
+        return primary.with_fallbacks(fallbacks, exceptions_to_handle=_FALLBACK_EXCEPTIONS)
 
 
 class LLMSettings(BaseSettings):
@@ -154,8 +179,10 @@ def get_llm_settings() -> LLMSettings:
 def get_chat_model(settings: LLMSettings | None = None) -> ChatModel:
     """Build the configured chat model without calling it.
 
-    Gemini returns the ``LLM_MODEL`` client first, then ``gemini-3.7-flash`` and
-    ``gemini-3.5-flash-lite`` if that call fails.
+    When ``LLM_MODEL`` is unset, Gemini uses ``gemini-3.5-flash-lite``, then
+    ``gemini-3.1-flash-lite``, ``gemini-3.5-flash``, and ``gemini-3.6-flash`` if
+    that call fails. A configured ``LLM_MODEL`` stays first and is removed from
+    the fallback list.
     """
     cfg = settings if settings is not None else get_llm_settings()
     model_name = cfg.resolved_model()
@@ -180,7 +207,12 @@ def _google_model(cfg: LLMSettings, model_name: str) -> ChatModel:
     logger.info("Creating Google chat model %s with fallbacks %s", model_name, fallback_names)
     if not fallbacks:
         return primary
-    return primary.with_fallbacks(fallbacks)
+    chain = primary.with_fallbacks(fallbacks, exceptions_to_handle=_FALLBACK_EXCEPTIONS)
+    return _GeminiWithFallbacks(
+        runnable=chain.runnable,
+        fallbacks=list(chain.fallbacks),
+        exceptions_to_handle=_FALLBACK_EXCEPTIONS,
+    )
 
 
 def _gemini_chat(cfg: LLMSettings, model_name: str) -> BaseChatModel:

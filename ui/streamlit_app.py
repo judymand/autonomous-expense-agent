@@ -30,6 +30,8 @@ from ui.styles import APP_CSS
 
 logger = logging.getLogger(__name__)
 _STARTUP_LOCK = threading.Lock()
+_MODEL_BUSY_MESSAGE = "שרתי המודל עמוסים כרגע, אנא נסו שוב בעוד מספר שניות"
+_CAPACITY_STATUS_CODES = frozenset({429, 503})
 
 
 def main() -> None:
@@ -136,10 +138,15 @@ def _on_send(message: str, upload: tuple[str, bytes] | None) -> None:
         st.session_state.pending_turn = None
         st.session_state.form_error = str(exc)
         st.rerun()
-    except Exception:
+    except Exception as exc:
         logger.exception("UI chat turn failed")
         st.session_state.pending_turn = None
-        st.session_state.form_error = "לא הצלחתי להשלים את הפנייה."
+        if _is_model_capacity_error(exc):
+            history = list(st.session_state.chat_history)
+            history.append({"role": "assistant", "content": _MODEL_BUSY_MESSAGE})
+            st.session_state.chat_history = history
+        else:
+            st.session_state.form_error = "לא הצלחתי להשלים את הפנייה."
         st.rerun()
 
     history = list(st.session_state.chat_history)
@@ -148,6 +155,30 @@ def _on_send(message: str, upload: tuple[str, bytes] | None) -> None:
     st.session_state.pending_turn = None
     _remember_turn(turn)
     st.rerun()
+
+
+def _is_model_capacity_error(exc: BaseException) -> bool:
+    """True when every fallback has failed with HTTP 429 or 503."""
+    seen: set[int] = set()
+    current: BaseException | None = exc
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        if _mentions_capacity_status(current):
+            return True
+        current = current.__cause__ or current.__context__
+    return False
+
+
+def _mentions_capacity_status(exc: BaseException) -> bool:
+    status = getattr(exc, "status_code", None)
+    if status in _CAPACITY_STATUS_CODES:
+        return True
+    code = getattr(exc, "code", None)
+    code_value = getattr(code, "value", code)
+    if code_value in _CAPACITY_STATUS_CODES:
+        return True
+    text = f"{type(exc).__name__} {exc}".casefold()
+    return "429" in text or "503" in text
 
 
 def _on_resolve(approved: bool, category: str | None) -> None:

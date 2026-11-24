@@ -106,7 +106,7 @@ The process loads `.env` when the API or the bot starts, so the `LANGCHAIN_*` na
 
 ## Run with Gemini
 
-Receipt photos, PDFs, and text turns use Google Gemini via `langchain-google-genai`. To protect against transient cloud latency or `503`/`504` spikes, `app/services/llm.py` configures an automatic fallback chain across active Gemini Flash models (`gemini-3.5-flash-lite` -> `gemini-3.7-flash` -> `gemini-3.8-flash`).
+Receipt photos, PDFs, and text turns use Google Gemini via `langchain-google-genai`. To protect against transient cloud latency or `503`/`504` spikes, `app/services/llm.py` configures an automatic fallback chain across active Gemini Flash models (`gemini-3.5-flash-lite` -> `gemini-3.1-flash-lite` -> `gemini-3.5-flash` -> `gemini-3.6-flash`).
 
 ```bash
 # .env

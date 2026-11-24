@@ -105,14 +105,37 @@ def _extraction(**overrides: object) -> ReceiptExtraction:
 
 def test_google_factory_uses_gemini_flash() -> None:
     model = get_chat_model(_settings(llm_provider="google", google_api_key="test-not-real"))
-    assert type(model).__name__ == "RunnableWithFallbacks"
+    assert type(model).__name__ == "_GeminiWithFallbacks"
+    assert model.exceptions_to_handle == (Exception,)
     steps = list(model.runnables)
     assert [step.model for step in steps] == [
-        "gemini-3.8-flash",
-        "gemini-3.7-flash",
         "gemini-3.5-flash-lite",
+        "gemini-3.1-flash-lite",
+        "gemini-3.5-flash",
+        "gemini-3.6-flash",
     ]
     assert all(step.max_retries == 1 and step.timeout == 60 for step in steps)
+
+    structured = model.with_structured_output(ReceiptExtraction)
+    assert type(structured).__name__ == "RunnableWithFallbacks"
+    assert structured.exceptions_to_handle == (Exception,)
+    assert len(list(structured.runnables)) == 4
+
+
+def test_google_factory_skips_a_fallback_that_matches_the_primary() -> None:
+    model = get_chat_model(
+        _settings(
+            llm_provider="google",
+            llm_model="gemini-3.5-flash",
+            google_api_key="test-not-real",
+        )
+    )
+    assert [step.model for step in model.runnables] == [
+        "gemini-3.5-flash",
+        "gemini-3.1-flash-lite",
+        "gemini-3.6-flash",
+    ]
+    assert model.exceptions_to_handle == (Exception,)
 
 
 def test_ollama_factory_uses_local_model() -> None:
